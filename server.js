@@ -19,17 +19,17 @@ app.use(express.json({ limit: "25mb" }));
 
 const { BOT_TOKEN, ADMIN_ID } = process.env;
 
-// Validate environment variables
-if (!BOT_TOKEN || !ADMIN_ID) {
-  console.error("❌ ERROR: Missing BOT_TOKEN or ADMIN_ID in .env file");
-  console.log("BOT_TOKEN:", BOT_TOKEN ? "Set ✅" : "Missing ❌");
-  console.log("ADMIN_ID:", ADMIN_ID ? ADMIN_ID : "Missing ❌");
-  process.exit(1);
-}
-
-console.log("✅ Environment variables loaded:");
+// Log environment variables status
+console.log("=".repeat(50));
+console.log("🔧 Environment Variables Status:");
 console.log("BOT_TOKEN:", BOT_TOKEN ? "Set ✅" : "Missing ❌");
-console.log("ADMIN_ID:", ADMIN_ID);
+console.log("ADMIN_ID:", ADMIN_ID ? ADMIN_ID : "Missing ❌");
+if (!BOT_TOKEN || !ADMIN_ID) {
+  console.warn("⚠️ WARNING: BOT_TOKEN or ADMIN_ID is missing!");
+  console.warn("⚠️ Please add them in Render Environment settings");
+  console.warn("⚠️ Server will start but Telegram features won't work");
+}
+console.log("=".repeat(50));
 
 /* ========================= TELEGRAM SEND FUNCTIONS ========================= */
 async function sendTelegram(text, chatId) {
@@ -114,6 +114,15 @@ app.get("/", (req, res) => {
 /* ========================= UNLOCK PROMO ENDPOINT ========================= */
 app.post("/unlock-promo", async (req, res) => {
   console.log("📥 Received unlock-promo request");
+  
+  // Check if environment variables are set
+  if (!BOT_TOKEN || !ADMIN_ID) {
+    console.error("❌ BOT_TOKEN or ADMIN_ID not configured");
+    return res.status(500).json({ 
+      error: "Server configuration error",
+      details: "BOT_TOKEN or ADMIN_ID not set in environment variables" 
+    });
+  }
   
   const { telegramId, name, username, method, whatsapp, call, image, type } = req.body;
 
