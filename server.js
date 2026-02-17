@@ -99,11 +99,16 @@ async function sendTelegramPhoto(chatId, photoBase64, caption) {
   }
 }
 
-/* ========================= SERVE HTML ========================= */
+/* ========================= ROOT ENDPOINT ========================= */
 app.get("/", (req, res) => {
-  const filePath = path.join(__dirname, "unlockpremium.html");
-  console.log("📄 Serving HTML from:", filePath);
-  res.sendFile(filePath);
+  res.json({ 
+    status: "Server is running",
+    message: "This is the backend API for unlock promo",
+    endpoints: {
+      health: "/health",
+      unlockPromo: "/unlock-promo (POST)"
+    }
+  });
 });
 
 /* ========================= UNLOCK PROMO ENDPOINT ========================= */
