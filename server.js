@@ -4,6 +4,8 @@ import cors from "cors";
 import dotenv from "dotenv";
 import path from "path";
 import { fileURLToPath } from "url";
+import FormData from "form-data"; // <-- Node-compatible FormData
+import fs from "fs";
 
 dotenv.config();
 
@@ -47,11 +49,9 @@ async function sendTelegram(text, chatId) {
   }
 }
 
-/* ================= SEND PHOTO (NODE 18 FORM DATA) ================= */
+/* ================= SEND PHOTO ================= */
 async function sendTelegramPhoto(chatId, base64Image, caption) {
   try {
-    console.log("📸 Preparing image...");
-
     const base64Data = base64Image.replace(/^data:image\/\w+;base64,/, "");
     const buffer = Buffer.from(base64Data, "base64");
 
@@ -59,9 +59,7 @@ async function sendTelegramPhoto(chatId, base64Image, caption) {
     form.append("chat_id", String(chatId));
     form.append("caption", caption);
     form.append("parse_mode", "HTML");
-
-    const blob = new Blob([buffer], { type: "image/jpeg" });
-    form.append("photo", blob, "promo.jpg");
+    form.append("photo", buffer, { filename: "promo.jpg", contentType: "image/jpeg" });
 
     const res = await fetch(
       `https://api.telegram.org/bot${BOT_TOKEN}/sendPhoto`,
@@ -72,13 +70,8 @@ async function sendTelegramPhoto(chatId, base64Image, caption) {
     );
 
     const data = await res.json();
-
-    if (!data.ok) {
-      console.error("❌ Telegram sendPhoto error:", data);
-    } else {
-      console.log("✅ Photo sent to admin");
-    }
-
+    if (!data.ok) console.error("❌ Telegram sendPhoto error:", data);
+    else console.log("✅ Photo sent to admin");
     return data;
   } catch (err) {
     console.error("❌ sendPhoto exception:", err.message);
@@ -100,42 +93,13 @@ app.get("/health", (req, res) => {
 });
 
 app.post("/unlock-promo", async (req, res) => {
-  const {
-    telegramId,
-    name,
-    username,
-    method,
-    whatsapp,
-    call,
-    image,
-    type
-  } = req.body;
+  const { telegramId, name, username, method, whatsapp, call, image, type } = req.body;
 
-  if (!BOT_TOKEN || !ADMIN_ID) {
-    return res.status(500).json({ error: "Bot not configured" });
-  }
-
-  if (!telegramId || !image) {
-    return res.status(400).json({ error: "Missing telegramId or image" });
-  }
-
-  // Determine if task is Telegram or WhatsApp
-  let taskType = "Other";
-  if (type === "task") {
-    if (method && method.toLowerCase() === "telegram") {
-      taskType = "Telegram Group Task";
-    } else if (method && method.toLowerCase() === "whatsapp") {
-      taskType = "WhatsApp Group Task";
-    } else {
-      taskType = "General Task";
-    }
-  } else if (type === "payment") {
-    taskType = "Payment Submission";
-  }
+  if (!BOT_TOKEN || !ADMIN_ID) return res.status(500).json({ error: "Bot not configured" });
+  if (!telegramId || !image) return res.status(400).json({ error: "Missing telegramId or image" });
 
   const caption = `
 <b>🟢 PROMO ${type === "task" ? "TASK" : "PAYMENT"}</b>
-<b>Task Type:</b> ${taskType}
 Name: ${name || "N/A"}
 Username: ${username || "N/A"}
 Telegram ID: ${telegramId}
@@ -146,15 +110,8 @@ Status: Pending review
 `;
 
   try {
-    const adminResult = await sendTelegramPhoto(
-      ADMIN_ID,
-      image,
-      caption
-    );
-
-    if (!adminResult.ok) {
-      throw new Error("Telegram rejected photo");
-    }
+    const adminResult = await sendTelegramPhoto(ADMIN_ID, image, caption);
+    if (!adminResult.ok) throw new Error("Telegram rejected photo");
 
     await sendTelegram(
       "✅ Your submission has been received. Admin will review it shortly.",
@@ -164,10 +121,7 @@ Status: Pending review
     res.json({ success: true });
   } catch (err) {
     console.error("❌ Submission error:", err.message);
-    res.status(500).json({
-      error: "Failed to send submission",
-      details: err.message
-    });
+    res.status(500).json({ error: "Failed to send submission", details: err.message });
   }
 });
 
