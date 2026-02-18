@@ -108,7 +108,8 @@ app.post("/unlock-promo", async (req, res) => {
     whatsapp,
     call,
     image,
-    type
+    type,
+    taskType // 👈 NEW (telegram | whatsapp)
   } = req.body;
 
   if (!BOT_TOKEN || !ADMIN_ID) {
@@ -119,15 +120,24 @@ app.post("/unlock-promo", async (req, res) => {
     return res.status(400).json({ error: "Missing telegramId or image" });
   }
 
+  // 🔹 Detect task label safely
+  let taskLabel = "";
+  if (type === "task") {
+    if (taskType === "telegram") taskLabel = "📢 Telegram Group Task";
+    else if (taskType === "whatsapp") taskLabel = "💬 WhatsApp Group Task";
+    else taskLabel = "📌 Task (Unknown type)";
+  }
+
   const caption = `
 <b>🟢 PROMO ${type === "task" ? "TASK" : "PAYMENT"}</b>
+${taskLabel ? `<b>Task Type:</b> ${taskLabel}\n` : ""}
 Name: ${name || "N/A"}
 Username: ${username || "N/A"}
 Telegram ID: ${telegramId}
 Method: ${method || "N/A"}
 WhatsApp: ${whatsapp || "N/A"}
 Call: ${call || "N/A"}
-Status: Pending review
+Status: ⏳ Pending review
 `;
 
   try {
