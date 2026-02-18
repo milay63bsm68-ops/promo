@@ -4,7 +4,6 @@ import cors from "cors";
 import dotenv from "dotenv";
 import path from "path";
 import { fileURLToPath } from "url";
-import FormData from "form-data";
 
 dotenv.config();
 
@@ -20,13 +19,13 @@ app.use(express.json({ limit: "25mb" }));
 
 const { BOT_TOKEN, ADMIN_ID } = process.env;
 
-/* ========================= LOG ENV ========================= */
+/* ================= LOG ENV ================= */
 console.log("=".repeat(50));
 console.log("BOT_TOKEN:", BOT_TOKEN ? "SET ✅" : "MISSING ❌");
 console.log("ADMIN_ID:", ADMIN_ID || "MISSING ❌");
 console.log("=".repeat(50));
 
-/* ========================= TELEGRAM FUNCTIONS ========================= */
+/* ================= SEND MESSAGE ================= */
 async function sendTelegram(text, chatId) {
   try {
     const res = await fetch(
@@ -41,7 +40,6 @@ async function sendTelegram(text, chatId) {
         })
       }
     );
-
     return await res.json();
   } catch (err) {
     console.error("❌ sendMessage error:", err.message);
@@ -49,22 +47,21 @@ async function sendTelegram(text, chatId) {
   }
 }
 
+/* ================= SEND PHOTO (NODE 18 FORM DATA) ================= */
 async function sendTelegramPhoto(chatId, base64Image, caption) {
   try {
-    console.log("📸 Preparing photo for Telegram...");
+    console.log("📸 Preparing image...");
 
-    // Remove base64 header if exists
     const base64Data = base64Image.replace(/^data:image\/\w+;base64,/, "");
     const buffer = Buffer.from(base64Data, "base64");
 
     const form = new FormData();
-    form.append("chat_id", chatId);
+    form.append("chat_id", String(chatId));
     form.append("caption", caption);
     form.append("parse_mode", "HTML");
-    form.append("photo", buffer, {
-      filename: "promo.jpg",
-      contentType: "image/jpeg"
-    });
+
+    const blob = new Blob([buffer], { type: "image/jpeg" });
+    form.append("photo", blob, "promo.jpg");
 
     const res = await fetch(
       `https://api.telegram.org/bot${BOT_TOKEN}/sendPhoto`,
@@ -89,9 +86,17 @@ async function sendTelegramPhoto(chatId, base64Image, caption) {
   }
 }
 
-/* ========================= ROUTES ========================= */
+/* ================= ROUTES ================= */
 app.get("/", (req, res) => {
   res.json({ status: "Server running ✅" });
+});
+
+app.get("/health", (req, res) => {
+  res.json({
+    status: "OK",
+    botToken: BOT_TOKEN ? "SET" : "MISSING",
+    adminId: ADMIN_ID || "MISSING"
+  });
 });
 
 app.post("/unlock-promo", async (req, res) => {
@@ -106,6 +111,10 @@ app.post("/unlock-promo", async (req, res) => {
     type
   } = req.body;
 
+  if (!BOT_TOKEN || !ADMIN_ID) {
+    return res.status(500).json({ error: "Bot not configured" });
+  }
+
   if (!telegramId || !image) {
     return res.status(400).json({ error: "Missing telegramId or image" });
   }
@@ -115,14 +124,13 @@ app.post("/unlock-promo", async (req, res) => {
 Name: ${name || "N/A"}
 Username: ${username || "N/A"}
 Telegram ID: ${telegramId}
-Method: ${method || "Task"}
+Method: ${method || "N/A"}
 WhatsApp: ${whatsapp || "N/A"}
 Call: ${call || "N/A"}
-Status: Pending admin review
+Status: Pending review
 `;
 
   try {
-    console.log("📤 Sending submission to admin...");
     const adminResult = await sendTelegramPhoto(
       ADMIN_ID,
       image,
@@ -134,7 +142,7 @@ Status: Pending admin review
     }
 
     await sendTelegram(
-      "✅ Your submission has been sent to admin for review.",
+      "✅ Your submission has been received. Admin will review it shortly.",
       telegramId
     );
 
@@ -142,22 +150,13 @@ Status: Pending admin review
   } catch (err) {
     console.error("❌ Submission error:", err.message);
     res.status(500).json({
-      error: "Failed to send to admin",
+      error: "Failed to send submission",
       details: err.message
     });
   }
 });
 
-/* ========================= HEALTH ========================= */
-app.get("/health", (req, res) => {
-  res.json({
-    status: "OK",
-    botToken: BOT_TOKEN ? "SET" : "MISSING",
-    adminId: ADMIN_ID
-  });
-});
-
-/* ========================= START ========================= */
+/* ================= START ================= */
 app.listen(PORT, () => {
   console.log(`✅ Server running on port ${PORT}`);
 });
