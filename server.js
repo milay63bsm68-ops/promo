@@ -4,12 +4,13 @@ import cors from "cors";
 import dotenv from "dotenv";
 import path from "path";
 import { fileURLToPath } from "url";
+import FormData from "form-data";
+
+dotenv.config();
 
 // Fix __dirname for ES modules
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-
-dotenv.config();
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -19,188 +20,144 @@ app.use(express.json({ limit: "25mb" }));
 
 const { BOT_TOKEN, ADMIN_ID } = process.env;
 
-// Log environment variables status
+/* ========================= LOG ENV ========================= */
 console.log("=".repeat(50));
-console.log("🔧 Environment Variables Status:");
-console.log("BOT_TOKEN:", BOT_TOKEN ? "Set ✅" : "Missing ❌");
-console.log("ADMIN_ID:", ADMIN_ID ? ADMIN_ID : "Missing ❌");
-if (!BOT_TOKEN || !ADMIN_ID) {
-  console.warn("⚠️ WARNING: BOT_TOKEN or ADMIN_ID is missing!");
-  console.warn("⚠️ Please add them in Render Environment settings");
-  console.warn("⚠️ Server will start but Telegram features won't work");
-}
+console.log("BOT_TOKEN:", BOT_TOKEN ? "SET ✅" : "MISSING ❌");
+console.log("ADMIN_ID:", ADMIN_ID || "MISSING ❌");
 console.log("=".repeat(50));
 
-/* ========================= TELEGRAM SEND FUNCTIONS ========================= */
+/* ========================= TELEGRAM FUNCTIONS ========================= */
 async function sendTelegram(text, chatId) {
-  if (!BOT_TOKEN || !chatId) {
-    console.log("❌ Missing BOT_TOKEN or chatId");
-    return { ok: false, error: "Missing credentials" };
-  }
-  
   try {
-    const response = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ 
-        chat_id: Number(chatId), 
-        text, 
-        parse_mode: "HTML" 
-      })
-    });
-    
-    const data = await response.json();
-    
-    if (!data.ok) {
-      console.error("❌ Telegram sendMessage error:", data);
-    } else {
-      console.log("✅ Message sent to:", chatId);
-    }
-    
-    return data;
+    const res = await fetch(
+      `https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          chat_id: Number(chatId),
+          text,
+          parse_mode: "HTML"
+        })
+      }
+    );
+
+    return await res.json();
   } catch (err) {
-    console.error("❌ Error sending Telegram message:", err.message);
-    return { ok: false, error: err.message };
+    console.error("❌ sendMessage error:", err.message);
+    return { ok: false };
   }
 }
 
-async function sendTelegramPhoto(chatId, photoBase64, caption) {
-  if (!BOT_TOKEN || !chatId) {
-    console.log("❌ Missing BOT_TOKEN or chatId");
-    return { ok: false, error: "Missing credentials" };
-  }
-  
+async function sendTelegramPhoto(chatId, base64Image, caption) {
   try {
-    console.log("📸 Sending photo to admin:", chatId);
-    
-    const response = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendPhoto`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ 
-        chat_id: Number(chatId), 
-        photo: photoBase64, 
-        caption, 
-        parse_mode: "HTML" 
-      })
+    console.log("📸 Preparing photo for Telegram...");
+
+    // Remove base64 header if exists
+    const base64Data = base64Image.replace(/^data:image\/\w+;base64,/, "");
+    const buffer = Buffer.from(base64Data, "base64");
+
+    const form = new FormData();
+    form.append("chat_id", chatId);
+    form.append("caption", caption);
+    form.append("parse_mode", "HTML");
+    form.append("photo", buffer, {
+      filename: "promo.jpg",
+      contentType: "image/jpeg"
     });
-    
-    const data = await response.json();
-    
+
+    const res = await fetch(
+      `https://api.telegram.org/bot${BOT_TOKEN}/sendPhoto`,
+      {
+        method: "POST",
+        body: form
+      }
+    );
+
+    const data = await res.json();
+
     if (!data.ok) {
       console.error("❌ Telegram sendPhoto error:", data);
     } else {
-      console.log("✅ Photo sent to admin successfully");
+      console.log("✅ Photo sent to admin");
     }
-    
+
     return data;
   } catch (err) {
-    console.error("❌ Error sending Telegram photo:", err.message);
+    console.error("❌ sendPhoto exception:", err.message);
     return { ok: false, error: err.message };
   }
 }
 
-/* ========================= ROOT ENDPOINT ========================= */
+/* ========================= ROUTES ========================= */
 app.get("/", (req, res) => {
-  res.json({ 
-    status: "Server is running",
-    message: "This is the backend API for unlock promo",
-    endpoints: {
-      health: "/health",
-      unlockPromo: "/unlock-promo (POST)"
-    }
-  });
+  res.json({ status: "Server running ✅" });
 });
 
-/* ========================= UNLOCK PROMO ENDPOINT ========================= */
 app.post("/unlock-promo", async (req, res) => {
-  console.log("📥 Received unlock-promo request");
-  
-  // Check if environment variables are set
-  if (!BOT_TOKEN || !ADMIN_ID) {
-    console.error("❌ BOT_TOKEN or ADMIN_ID not configured");
-    return res.status(500).json({ 
-      error: "Server configuration error",
-      details: "BOT_TOKEN or ADMIN_ID not set in environment variables" 
-    });
-  }
-  
-  const { telegramId, name, username, method, whatsapp, call, image, type } = req.body;
+  const {
+    telegramId,
+    name,
+    username,
+    method,
+    whatsapp,
+    call,
+    image,
+    type
+  } = req.body;
 
-  // Validate required fields
   if (!telegramId || !image) {
-    console.log("❌ Missing required data:", { telegramId, hasImage: !!image });
     return res.status(400).json({ error: "Missing telegramId or image" });
   }
 
   const caption = `
-<b>🟢 PROMO ${type === "task" ? "TASK" : "PAYMENT"} SUBMISSION</b>
+<b>🟢 PROMO ${type === "task" ? "TASK" : "PAYMENT"}</b>
 Name: ${name || "N/A"}
 Username: ${username || "N/A"}
-ID: ${telegramId}
+Telegram ID: ${telegramId}
 Method: ${method || "Task"}
 WhatsApp: ${whatsapp || "N/A"}
 Call: ${call || "N/A"}
-Status: Pending review by admin
+Status: Pending admin review
 `;
 
-  console.log("📋 Submission details:", {
-    telegramId,
-    name,
-    username,
-    type,
-    method,
-    adminId: ADMIN_ID
-  });
-
   try {
-    // Send to admin with photo on top
-    console.log("📤 Sending to admin ID:", ADMIN_ID);
-    const photoResult = await sendTelegramPhoto(ADMIN_ID, image, caption);
-    
-    if (!photoResult.ok) {
-      throw new Error(`Failed to send photo to admin: ${photoResult.error || JSON.stringify(photoResult)}`);
+    console.log("📤 Sending submission to admin...");
+    const adminResult = await sendTelegramPhoto(
+      ADMIN_ID,
+      image,
+      caption
+    );
+
+    if (!adminResult.ok) {
+      throw new Error("Telegram rejected photo");
     }
 
-    // Notify user
-    console.log("📤 Notifying user:", telegramId);
-    const userResult = await sendTelegram(
-      `✅ Your ${type || "submission"} has been received. Admin will review it shortly.`, 
+    await sendTelegram(
+      "✅ Your submission has been sent to admin for review.",
       telegramId
     );
-    
-    if (!userResult.ok) {
-      console.log("⚠️ Warning: Could not notify user, but admin was notified");
-    }
 
-    console.log("✅ Submission processed successfully");
-    res.json({ success: true, message: "Submission sent to admin" });
-    
+    res.json({ success: true });
   } catch (err) {
-    console.error("❌ Error processing submission:", err.message);
-    console.error("Error details:", err);
-    res.status(500).json({ 
-      error: "Failed to send submission", 
-      details: err.message 
+    console.error("❌ Submission error:", err.message);
+    res.status(500).json({
+      error: "Failed to send to admin",
+      details: err.message
     });
   }
 });
 
-/* ========================= HEALTH CHECK ========================= */
+/* ========================= HEALTH ========================= */
 app.get("/health", (req, res) => {
   res.json({
     status: "OK",
-    botToken: BOT_TOKEN ? "Set" : "Missing",
-    adminId: ADMIN_ID || "Missing",
-    timestamp: new Date().toISOString()
+    botToken: BOT_TOKEN ? "SET" : "MISSING",
+    adminId: ADMIN_ID
   });
 });
 
-/* ========================= START SERVER ========================= */
+/* ========================= START ========================= */
 app.listen(PORT, () => {
-  console.log("=".repeat(50));
   console.log(`✅ Server running on port ${PORT}`);
-  console.log(`📍 Health check: http://localhost:${PORT}/health`);
-  console.log(`🤖 Bot Token: ${BOT_TOKEN ? "Configured ✅" : "Missing ❌"}`);
-  console.log(`👤 Admin ID: ${ADMIN_ID || "Missing ❌"}`);
-  console.log("=".repeat(50));
 });
