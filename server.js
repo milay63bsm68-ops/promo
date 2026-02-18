@@ -47,24 +47,41 @@ async function sendTelegram(text, chatId) {
   }
 }
 
-/* ================= SEND PHOTO (via base64) ================= */
+/* ================= SEND PHOTO (NODE 18 FORM DATA) ================= */
 async function sendTelegramPhoto(chatId, base64Image, caption) {
   try {
-    const url = `https://api.telegram.org/bot${BOT_TOKEN}/sendPhoto`;
-    const payload = {
-      chat_id: Number(chatId),
-      photo: base64Image,
-      caption,
-      parse_mode: "HTML"
-    };
-    const res = await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload)
-    });
-    return await res.json();
+    console.log("📸 Preparing image...");
+
+    const base64Data = base64Image.replace(/^data:image\/\w+;base64,/, "");
+    const buffer = Buffer.from(base64Data, "base64");
+
+    const form = new FormData();
+    form.append("chat_id", String(chatId));
+    form.append("caption", caption);
+    form.append("parse_mode", "HTML");
+
+    const blob = new Blob([buffer], { type: "image/jpeg" });
+    form.append("photo", blob, "promo.jpg");
+
+    const res = await fetch(
+      `https://api.telegram.org/bot${BOT_TOKEN}/sendPhoto`,
+      {
+        method: "POST",
+        body: form
+      }
+    );
+
+    const data = await res.json();
+
+    if (!data.ok) {
+      console.error("❌ Telegram sendPhoto error:", data);
+    } else {
+      console.log("✅ Photo sent to admin");
+    }
+
+    return data;
   } catch (err) {
-    console.error("❌ sendPhoto error:", err.message);
+    console.error("❌ sendPhoto exception:", err.message);
     return { ok: false, error: err.message };
   }
 }
@@ -89,7 +106,6 @@ app.post("/unlock-promo", async (req, res) => {
     username,
     method,
     whatsapp,
-    telegramTask,
     call,
     image,
     type
@@ -103,14 +119,20 @@ app.post("/unlock-promo", async (req, res) => {
     return res.status(400).json({ error: "Missing telegramId or image" });
   }
 
+  // Determine task method (WhatsApp/Telegram)
+  let taskMethod = "N/A";
+  if (type === "task") {
+    taskMethod = whatsapp && whatsapp !== "N/A" ? "WhatsApp" : "Telegram";
+  }
+
   const caption = `
 <b>🟢 PROMO ${type === "task" ? "TASK" : "PAYMENT"}</b>
 Name: ${name || "N/A"}
 Username: ${username || "N/A"}
 Telegram ID: ${telegramId}
 Method: ${method || "N/A"}
+Task Type: ${taskMethod}
 WhatsApp: ${whatsapp || "N/A"}
-Telegram Task: ${telegramTask || "N/A"}
 Call: ${call || "N/A"}
 Status: Pending review
 `;
