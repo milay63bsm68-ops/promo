@@ -108,8 +108,7 @@ app.post("/unlock-promo", async (req, res) => {
     whatsapp,
     call,
     image,
-    type,
-    taskType // 👈 NEW (telegram | whatsapp)
+    type
   } = req.body;
 
   if (!BOT_TOKEN || !ADMIN_ID) {
@@ -120,24 +119,30 @@ app.post("/unlock-promo", async (req, res) => {
     return res.status(400).json({ error: "Missing telegramId or image" });
   }
 
-  // 🔹 Detect task label safely
-  let taskLabel = "";
+  // Determine if task is Telegram or WhatsApp
+  let taskType = "Other";
   if (type === "task") {
-    if (taskType === "telegram") taskLabel = "📢 Telegram Group Task";
-    else if (taskType === "whatsapp") taskLabel = "💬 WhatsApp Group Task";
-    else taskLabel = "📌 Task (Unknown type)";
+    if (method && method.toLowerCase() === "telegram") {
+      taskType = "Telegram Group Task";
+    } else if (method && method.toLowerCase() === "whatsapp") {
+      taskType = "WhatsApp Group Task";
+    } else {
+      taskType = "General Task";
+    }
+  } else if (type === "payment") {
+    taskType = "Payment Submission";
   }
 
   const caption = `
 <b>🟢 PROMO ${type === "task" ? "TASK" : "PAYMENT"}</b>
-${taskLabel ? `<b>Task Type:</b> ${taskLabel}\n` : ""}
+<b>Task Type:</b> ${taskType}
 Name: ${name || "N/A"}
 Username: ${username || "N/A"}
 Telegram ID: ${telegramId}
 Method: ${method || "N/A"}
 WhatsApp: ${whatsapp || "N/A"}
 Call: ${call || "N/A"}
-Status: ⏳ Pending review
+Status: Pending review
 `;
 
   try {
